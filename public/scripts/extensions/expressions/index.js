@@ -817,7 +817,7 @@ async function getExpressionListSlashCommand(args, characterName) {
     const customExpressions = extension_settings?.expressions?.custom || [];
     const expressionsMap = {
         default: expressions.filter(expression => !customExpressions.includes(expression)),
-        custom: customExpressions,
+        custom: expressions.filter(expression => customExpressions.includes(expression)),
         all: expressions,
     };
 
@@ -1537,7 +1537,7 @@ function getLastExpression({ characterName = '' } = {}) {
 
     const char = findChar({ name: characterName, quiet: true });
 
-    const currentLastMessage = getLastCharacterMessage({ characterName });
+    const currentLastMessage = getLastCharacterMessage({ characterName: char?.name ?? characterName });
     const finalCharacterName = currentLastMessage?.name ?? char?.name ?? characterName;
 
     const spriteFolderName = getSpriteFolderName(currentLastMessage, finalCharacterName);
