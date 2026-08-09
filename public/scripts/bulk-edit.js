@@ -121,6 +121,7 @@ export function initBulkEdit() {
     $('#bulkEditButton').on('click', onEditButtonClick);
     $('#bulkSelectAllButton').on('click', onSelectAllButtonClick);
     $('#bulkDeleteButton').on('click', onDeleteButtonClick);
+    $('#bulkExportAllButton').on('click', characterGroupOverlay.handleExportAll);
 
     const characterContextMenu = new CharacterContextMenu(characterGroupOverlay);
     eventSource.on(event_types.CHARACTER_PAGE_LOADED, characterGroupOverlay.onPageLoad);

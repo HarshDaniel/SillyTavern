@@ -264,6 +264,23 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
     }
 }
 
+/** Check whether a character card uses the default avatar. */
+async function hasDefaultAvatar(characterPath) {
+    try {
+        const [defaultAvatar, characterAvatar] = await Promise.all([
+            Jimp.read(DEFAULT_AVATAR_PATH),
+            Jimp.read(characterPath),
+        ]);
+
+        return defaultAvatar.bitmap.width === characterAvatar.bitmap.width
+            && defaultAvatar.bitmap.height === characterAvatar.bitmap.height
+            && Buffer.from(defaultAvatar.bitmap.data).equals(Buffer.from(characterAvatar.bitmap.data));
+    } catch (error) {
+        console.warn(`Could not determine whether ${characterPath} uses the default avatar`, error);
+        return false;
+    }
+}
+
 /**
  * @typedef {Object} Crop
  * @property {number} x X-coordinate
@@ -1655,6 +1672,10 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
 
         switch (request.body.format) {
             case 'png': {
+                if (request.body.skip_default_avatar && await hasDefaultAvatar(filename)) {
+                    return response.sendStatus(204);
+                }
+
                 const rawBuffer = await fsPromises.readFile(filename);
                 const rawData = read(rawBuffer);
                 const mutatedData = mutateJsonString(rawData, unsetPrivateFields);

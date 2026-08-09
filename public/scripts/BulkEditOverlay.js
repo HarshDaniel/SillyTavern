@@ -19,6 +19,7 @@ import { convertCharacterToPersona } from './personas.js';
 import { callGenericPopup, POPUP_TYPE } from './popup.js';
 import { createTagInput, getTagKeyForEntity, getTagsList, printTagList, tag_map, compareTagsForSort, removeTagFromMap, importTags, tag_import_setting } from './tags.js';
 import { t } from './i18n.js';
+import { download } from './utils.js';
 
 /**
  * Static object representing the actions of the
@@ -806,6 +807,117 @@ class BulkEditOverlay {
         }
 
         this.browseState();
+    };
+
+    /** Export all character cards and group definitions as a ZIP archive. */
+    handleExportAll = () => this.#exportCharacters();
+
+    /** Export character cards and group definitions to a ZIP archive. */
+    #exportCharacters = async () => {
+        const charactersToExport = characters
+            .filter(character => character?.avatar);
+
+        let groupsToExport;
+        try {
+            const response = await fetch('/api/groups/export', {
+                method: 'POST',
+                headers: getRequestHeaders({ omitContentType: true }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            groupsToExport = await response.json();
+        } catch (error) {
+            console.error('Failed to get groups for export', error);
+            toastr.error('Could not load groups for export. Check the console for details.', 'Export');
+            return;
+        }
+
+        if (charactersToExport.length === 0 && groupsToExport.length === 0) {
+            toastr.warning('No characters or groups are available for export.');
+            return;
+        }
+
+        const characterDescription = `${charactersToExport.length} character${charactersToExport.length === 1 ? '' : 's'}`;
+        const groupDescription = `${groupsToExport.length} group${groupsToExport.length === 1 ? '' : 's'}`;
+        const confirmed = await callGenericPopup(
+            `<h3>Export ${characterDescription} and ${groupDescription}?</h3>
+            <p>A ZIP archive containing group definitions plus character JSON and, where available, PNG card files will be downloaded.</p>`,
+            POPUP_TYPE.CONFIRM,
+        );
+        if (!confirmed) return;
+
+        if (!('JSZip' in window)) {
+            await import('../lib/jszip.min.js');
+        }
+
+        const zip = new window.JSZip();
+        let failedExportCount = 0;
+        const loaderHandle = loader.show({
+            slug: 'bulk-character-export',
+            title: t`Character and Group Export`,
+            message: `Exporting ${characterDescription} and ${groupDescription}…`,
+            toastMode: loader.ToastMode.STATIC,
+        });
+
+        try {
+            for (const character of charactersToExport) {
+                const isPngCard = /\.png$/i.test(character.avatar);
+                const formats = isPngCard ? ['png', 'json'] : ['json'];
+                const baseFilename = character.avatar.replace(/\.[^.]+$/, '');
+
+                for (const format of formats) {
+                    try {
+                        const response = await fetch('/api/characters/export', {
+                            method: 'POST',
+                            headers: getRequestHeaders(),
+                            body: JSON.stringify({
+                                format,
+                                avatar_url: character.avatar,
+                                ...(format === 'png' && { skip_default_avatar: true }),
+                            }),
+                        });
+
+                        if (response.status === 204) {
+                            continue;
+                        }
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+
+                        const filename = format === 'png' ? character.avatar : `${baseFilename}.json`;
+                        zip.file(`characters/${filename}`, await response.blob());
+                    } catch (error) {
+                        console.error(`Failed to export ${character.name} as ${format}`, error);
+                        failedExportCount++;
+                    }
+                }
+            }
+
+            for (const group of groupsToExport) {
+                zip.file(`groups/${group.filename}`, JSON.stringify(group.data, null, 4));
+            }
+
+            if (Object.keys(zip.files).length === 0) {
+                toastr.error('No character or group files could be exported.');
+                return;
+            }
+
+            const archive = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+            const date = new Date().toISOString().slice(0, 10);
+            download(archive, `SillyTavern-characters-and-groups-${date}.zip`, 'application/zip');
+
+            if (failedExportCount > 0) {
+                toastr.warning(`${failedExportCount} file${failedExportCount === 1 ? '' : 's'} could not be exported. Check the console for details.`, 'Character and Group Export');
+            } else {
+                toastr.success(`Exported ${characterDescription} and ${groupDescription}.`, 'Character and Group Export');
+            }
+        } finally {
+            await loaderHandle.hide();
+        }
     };
 
     /**

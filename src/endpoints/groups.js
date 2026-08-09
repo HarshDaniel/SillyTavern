@@ -153,6 +153,30 @@ router.post('/all', (request, response) => {
     return response.send(groups);
 });
 
+/** Exports saved group definitions without chat histories. */
+router.post('/export', (request, response) => {
+    const groups = [];
+
+    if (!fs.existsSync(request.user.directories.groups)) {
+        return response.send(groups);
+    }
+
+    const files = fs.readdirSync(request.user.directories.groups).filter(file => path.extname(file) === '.json');
+    for (const file of files) {
+        try {
+            const filePath = path.join(request.user.directories.groups, file);
+            groups.push({
+                filename: file,
+                data: JSON.parse(fs.readFileSync(filePath, 'utf8')),
+            });
+        } catch (error) {
+            console.error(`Could not export group ${file}`, error);
+        }
+    }
+
+    return response.send(groups);
+});
+
 router.post('/create', (request, response) => {
     if (!request.body) {
         return response.sendStatus(400);
